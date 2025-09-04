@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { GenerationMode, GeneratedImage, ImageData } from './types';
 import { PHOTOSHOOT_THEMES, LIGHTING_STYLES, INITIAL_IMAGES } from './constants';
-import { generateImages, generateImagePrompt, generateVideoFromImage } from './services/geminiService';
+import { generateImages, generateImagePrompt, generateVideoFromImage, generateVideoPrompt } from './services/geminiService';
 import { fileToGenerativePart } from './utils/imageUtils';
 import ImageUploader from './components/ImageUploader';
 import ImageCard from './components/ImageCard';
@@ -9,11 +9,12 @@ import Modal from './components/Modal';
 import Header from './components/Header';
 import LoadingSpinner from './components/LoadingSpinner';
 import VideoModal from './components/VideoModal';
+import { XIcon } from './components/icons/XIcon';
 
 export default function App() {
   const [mode, setMode] = useState<GenerationMode>(GenerationMode.Lookbook);
   const [modelImage, setModelImage] = useState<ImageData | null>(null);
-  const [productImage, setProductImage] = useState<ImageData | null>(null);
+  const [productImages, setProductImages] = useState<ImageData[]>([]);
   const [theme, setTheme] = useState<string>(PHOTOSHOOT_THEMES[0].value);
   const [lighting, setLighting] = useState<string>(LIGHTING_STYLES[0].value);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -34,26 +35,42 @@ export default function App() {
     "Almost there, polishing the final cut...",
   ];
 
-  const isGenerationDisabled = 
-    isLoading || 
-    !productImage || 
-    (mode === GenerationMode.Lookbook && !modelImage);
+  const isGenerationDisabled = (() => {
+    if (isLoading) return true;
+    switch (mode) {
+      case GenerationMode.Lookbook:
+        return !modelImage || productImages.length === 0;
+      case GenerationMode.Broll:
+        return productImages.length === 0;
+      case GenerationMode.OutfitBuilder:
+        return !modelImage || productImages.length < 2;
+      default:
+        return true;
+    }
+  })();
 
-  const handleImageUpload = async (file: File, type: 'model' | 'product') => {
+  const handleImageUpload = async (file: File, type: 'model' | 'product_single' | 'product_multi') => {
     try {
       const generativePart = await fileToGenerativePart(file);
-      const imageData = {
+      const imageData: ImageData = {
+        id: crypto.randomUUID(),
         part: generativePart,
         url: URL.createObjectURL(file)
       };
       if (type === 'model') {
         setModelImage(imageData);
-      } else {
-        setProductImage(imageData);
+      } else if (type === 'product_single') {
+        setProductImages([imageData]);
+      } else if (type === 'product_multi') {
+        setProductImages(prev => [...prev, imageData]);
       }
     } catch (err) {
       setError('Failed to process image. Please try another file.');
     }
+  };
+
+  const handleRemoveProductImage = (id: string) => {
+    setProductImages(prev => prev.filter(img => img.id !== id));
   };
   
   const handleGenerate = async () => {
@@ -68,10 +85,10 @@ export default function App() {
             mode,
             theme,
             lighting,
-            productImage: productImage!.part,
+            productImages: productImages.map(p => p.part),
             modelImage: modelImage?.part,
         });
-        setGeneratedImages(results.map(img => ({ src: img.src, mimeType: img.mimeType, prompt: null, id: crypto.randomUUID() })));
+        setGeneratedImages(results.map(img => ({ src: img.src, mimeType: img.mimeType, prompt: null, videoPrompt: null, id: crypto.randomUUID() })));
     } catch (err: any) {
         console.error(err);
         setError(`Failed to generate images: ${err.message || 'An unknown error occurred.'}`);
@@ -95,6 +112,22 @@ export default function App() {
         console.error(err);
         setError(`Failed to generate prompt: ${err.message}`);
         setGeneratedImages(imgs => imgs.map(img => img.id === imageId ? { ...img, prompt: 'Error generating prompt.' } : img));
+    }
+  }, [generatedImages]);
+
+  const handleGenerateVideoPrompt = useCallback(async (imageId: string) => {
+    const imageToUpdate = generatedImages.find(img => img.id === imageId);
+    if (!imageToUpdate) return;
+
+    setGeneratedImages(imgs => imgs.map(img => img.id === imageId ? { ...img, videoPrompt: '...' } : img));
+
+    try {
+        const prompt = await generateVideoPrompt({ src: imageToUpdate.src, mimeType: imageToUpdate.mimeType });
+        setGeneratedImages(imgs => imgs.map(img => img.id === imageId ? { ...img, videoPrompt: prompt } : img));
+    } catch (err: any) {
+        console.error(err);
+        setError(`Failed to generate video prompt: ${err.message}`);
+        setGeneratedImages(imgs => imgs.map(img => img.id === imageId ? { ...img, videoPrompt: 'Error generating video prompt.' } : img));
     }
   }, [generatedImages]);
 
@@ -127,8 +160,14 @@ export default function App() {
   const changeMode = (newMode: GenerationMode) => {
     setMode(newMode);
     setModelImage(null);
-    setProductImage(null);
+    setProductImages([]);
     setGeneratedImages(INITIAL_IMAGES);
+  }
+
+  const getButtonLabel = () => {
+    if (isLoading) return 'Generating...';
+    if (mode === GenerationMode.Broll) return 'Create B-roll';
+    return `Create ${mode}`;
   }
 
   return (
@@ -143,23 +182,59 @@ export default function App() {
           {/* Left Panel: Controls */}
           <div className="w-full lg:w-2/5 xl:w-1/3 flex-shrink-0 space-y-6">
               <ControlSection title="1. Select Generation Mode" subtitle="Choose what you want to create.">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <button onClick={() => changeMode(GenerationMode.Lookbook)} className={`py-3 px-4 rounded-lg font-semibold transition-colors text-sm ${mode === GenerationMode.Lookbook ? 'bg-brand-primary text-white' : 'bg-brand-card hover:bg-brand-border'}`}>Lookbook</button>
                     <button onClick={() => changeMode(GenerationMode.Broll)} className={`py-3 px-4 rounded-lg font-semibold transition-colors text-sm ${mode === GenerationMode.Broll ? 'bg-brand-primary text-white' : 'bg-brand-card hover:bg-brand-border'}`}>B-roll</button>
+                    <button onClick={() => changeMode(GenerationMode.OutfitBuilder)} className={`py-3 px-4 rounded-lg font-semibold transition-colors text-sm ${mode === GenerationMode.OutfitBuilder ? 'bg-brand-primary text-white' : 'bg-brand-card hover:bg-brand-border'}`}>Outfit Builder</button>
                 </div>
               </ControlSection>
 
-              {mode === GenerationMode.Lookbook && (
+              {(mode === GenerationMode.Lookbook || mode === GenerationMode.OutfitBuilder) && (
                 <ControlSection title="2. Upload Model" subtitle="A clear photo of a person.">
                   <ImageUploader onImageUpload={(file) => handleImageUpload(file, 'model')} imageSrc={modelImage?.url} onRemoveImage={() => setModelImage(null)} />
                 </ControlSection>
               )}
 
-              <ControlSection title={mode === GenerationMode.Lookbook ? "3. Upload Product" : "1. Upload Product"} subtitle="Clothing, bags, shoes, etc.">
-                <ImageUploader onImageUpload={(file) => handleImageUpload(file, 'product')} imageSrc={productImage?.url} onRemoveImage={() => setProductImage(null)} />
+              <ControlSection 
+                title={
+                  mode === GenerationMode.Broll ? "2. Upload Product" : "3. Upload Product(s)"
+                } 
+                subtitle={
+                  mode === GenerationMode.OutfitBuilder ? "Add up to 5 items for the outfit." : "Clothing, bags, shoes, etc."
+                }
+              >
+                {mode === GenerationMode.OutfitBuilder ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {productImages.map(img => (
+                      <div key={img.id} className="relative group aspect-square">
+                        <img src={img.url} alt="Product item" className="w-full h-full object-cover rounded-md" />
+                        <button
+                          onClick={() => handleRemoveProductImage(img.id)}
+                          className="absolute top-1 right-1 bg-black/60 hover:bg-black/80 text-white rounded-full p-1 transition-all opacity-0 group-hover:opacity-100"
+                          aria-label="Remove item"
+                        >
+                          <XIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                    {productImages.length < 5 && (
+                      <ImageUploader 
+                        onImageUpload={(file) => handleImageUpload(file, 'product_multi')} 
+                        imageSrc={null} 
+                        onRemoveImage={() => {}} 
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <ImageUploader 
+                    onImageUpload={(file) => handleImageUpload(file, 'product_single')} 
+                    imageSrc={productImages[0]?.url} 
+                    onRemoveImage={() => setProductImages([])} 
+                  />
+                )}
               </ControlSection>
 
-              <ControlSection title={mode === GenerationMode.Lookbook ? "4. Customize Look" : "2. Customize Look"} subtitle="Set the theme and lighting for the photoshoot.">
+              <ControlSection title={mode === GenerationMode.Broll ? "3. Customize Look" : "4. Customize Look"} subtitle="Set the theme and lighting for the photoshoot.">
                 <div className="space-y-4">
                   <div>
                     <label htmlFor="theme" className="block text-sm font-medium text-brand-light mb-1">Photoshoot Theme</label>
@@ -182,7 +257,7 @@ export default function App() {
                 className="w-full bg-brand-primary text-white font-bold py-3 px-4 rounded-lg transition-all hover:bg-sky-400 disabled:bg-brand-secondary disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center"
               >
                 {isLoading && <LoadingSpinner size="sm" />}
-                {isLoading ? 'Generating...' : `Create ${mode === GenerationMode.Lookbook ? 'Lookbook' : 'B-roll'}`}
+                {getButtonLabel()}
               </button>
               {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
           </div>
@@ -190,7 +265,7 @@ export default function App() {
           {/* Right Panel: Results */}
           <div className="w-full lg:w-3/5 xl:w-2/3">
             <div className="bg-brand-card rounded-xl p-4 md:p-6 border border-brand-border h-full">
-              <h2 className="text-xl font-bold text-white mb-4">Your Fashion {mode === GenerationMode.Lookbook ? 'Lookbook' : 'B-roll'}</h2>
+              <h2 className="text-xl font-bold text-white mb-4">Your Fashion {mode === GenerationMode.OutfitBuilder ? 'Lookbook' : mode}</h2>
               <div className="relative min-h-[400px] w-full">
                 {isLoading ? (
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 rounded-lg">
@@ -205,6 +280,7 @@ export default function App() {
                         image={image}
                         onZoom={() => setSelectedImage(image)}
                         onGeneratePrompt={() => handleGeneratePromptForImage(image.id)}
+                        onGenerateVideoPrompt={() => handleGenerateVideoPrompt(image.id)}
                         onGenerateVideo={handleGenerateVideo}
                         isGeneratingVideo={isGeneratingVideo}
                       />

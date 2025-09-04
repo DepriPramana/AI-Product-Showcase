@@ -6,23 +6,34 @@ import { SparklesIcon } from './icons/SparklesIcon';
 import { ClipboardIcon } from './icons/ClipboardIcon';
 import { CheckIcon } from './icons/CheckIcon';
 import { VideoCameraIcon } from './icons/VideoCameraIcon';
+import { FilmIcon } from './icons/FilmIcon';
 
 interface ImageCardProps {
   image: GeneratedImage;
   onZoom: () => void;
   onGeneratePrompt: () => void;
+  onGenerateVideoPrompt: () => void;
   onGenerateVideo: (image: GeneratedImage) => void;
   isGeneratingVideo: boolean;
 }
 
-const ImageCard: React.FC<ImageCardProps> = ({ image, onZoom, onGeneratePrompt, onGenerateVideo, isGeneratingVideo }) => {
-  const [isCopied, setIsCopied] = useState(false);
+const ImageCard: React.FC<ImageCardProps> = ({ image, onZoom, onGeneratePrompt, onGenerateVideoPrompt, onGenerateVideo, isGeneratingVideo }) => {
+  const [isImgPromptCopied, setIsImgPromptCopied] = useState(false);
+  const [isVidPromptCopied, setIsVidPromptCopied] = useState(false);
 
-  const handleCopyPrompt = () => {
+  const handleCopyImgPrompt = () => {
     if (image.prompt && image.prompt !== '...') {
       navigator.clipboard.writeText(image.prompt);
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
+      setIsImgPromptCopied(true);
+      setTimeout(() => setIsImgPromptCopied(false), 2000);
+    }
+  };
+
+  const handleCopyVidPrompt = () => {
+    if (image.videoPrompt && image.videoPrompt !== '...') {
+      navigator.clipboard.writeText(image.videoPrompt);
+      setIsVidPromptCopied(true);
+      setTimeout(() => setIsVidPromptCopied(false), 2000);
     }
   };
   
@@ -39,17 +50,30 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, onZoom, onGeneratePrompt, 
     <div className="aspect-[2/3] relative rounded-lg overflow-hidden group">
       <img src={image.src} alt="Generated fashion look" className="w-full h-full object-cover" />
       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3">
-        {image.prompt && image.prompt !== '...' ? (
-          <div className="bg-black/60 backdrop-blur-sm p-2 rounded-md">
-            <p className="text-xs text-gray-200 leading-snug line-clamp-3">{image.prompt}</p>
-          </div>
-        ) : <div />}
+        <div className="space-y-1">
+          {image.prompt && image.prompt !== '...' && (
+            <div className="bg-black/60 backdrop-blur-sm p-2 rounded-md">
+              <p className="text-xs text-gray-200 leading-snug line-clamp-3">{image.prompt}</p>
+            </div>
+          )}
+           {image.videoPrompt && image.videoPrompt !== '...' && (
+            <div className="bg-black/60 backdrop-blur-sm p-2 rounded-md">
+              <p className="text-xs text-gray-200 leading-snug line-clamp-3">{image.videoPrompt}</p>
+            </div>
+          )}
+        </div>
 
         <div className="flex flex-col items-center gap-2">
             {image.prompt && image.prompt !== '...' && (
-                 <button onClick={handleCopyPrompt} className="w-full flex items-center justify-center gap-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white font-semibold text-xs py-2 px-3 rounded-md transition-colors">
-                    {isCopied ? <CheckIcon className="w-4 h-4 text-green-400"/> : <ClipboardIcon className="w-4 h-4" />}
-                    {isCopied ? 'Copied!' : 'Copy Prompt'}
+                 <button onClick={handleCopyImgPrompt} className="w-full flex items-center justify-center gap-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white font-semibold text-xs py-2 px-3 rounded-md transition-colors">
+                    {isImgPromptCopied ? <CheckIcon className="w-4 h-4 text-green-400"/> : <ClipboardIcon className="w-4 h-4" />}
+                    {isImgPromptCopied ? 'Copied Img Prompt!' : 'Copy Img Prompt'}
+                </button>
+            )}
+            {image.videoPrompt && image.videoPrompt !== '...' && (
+                 <button onClick={handleCopyVidPrompt} className="w-full flex items-center justify-center gap-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white font-semibold text-xs py-2 px-3 rounded-md transition-colors">
+                    {isVidPromptCopied ? <CheckIcon className="w-4 h-4 text-green-400"/> : <ClipboardIcon className="w-4 h-4" />}
+                    {isVidPromptCopied ? 'Copied Vid Prompt!' : 'Copy Vid Prompt'}
                 </button>
             )}
            <ActionButton onClick={onZoom} icon={<ZoomInIcon className="w-4 h-4"/>} label="Zoom" />
@@ -57,8 +81,14 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, onZoom, onGeneratePrompt, 
            <ActionButton 
             onClick={onGeneratePrompt} 
             icon={<SparklesIcon className="w-4 h-4"/>} 
-            label={image.prompt === '...' ? "Generating..." : "Generate Prompt"} 
+            label={image.prompt === '...' ? "Generating..." : "Gen Img Prompt"} 
             disabled={!!image.prompt}
+            />
+          <ActionButton 
+            onClick={onGenerateVideoPrompt} 
+            icon={<FilmIcon className="w-4 h-4"/>} 
+            label={image.videoPrompt === '...' ? "Generating..." : "Gen Vid Prompt"} 
+            disabled={!!image.videoPrompt}
             />
            <ActionButton 
             onClick={() => onGenerateVideo(image)}

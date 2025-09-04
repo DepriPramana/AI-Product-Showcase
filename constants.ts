@@ -1,4 +1,3 @@
-
 import { GeneratedImage } from './types';
 
 export const PHOTOSHOOT_THEMES = [
@@ -24,4 +23,5 @@ export const INITIAL_IMAGES: GeneratedImage[] = Array.from({ length: 6 }).map((_
   src: `https://picsum.photos/seed/${i+10}/400/600`,
   mimeType: 'image/jpeg',
   prompt: null,
+  videoPrompt: null,
 }));

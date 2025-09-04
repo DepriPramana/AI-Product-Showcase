@@ -15,7 +15,7 @@ interface GenerateImagesParams {
     mode: GenerationMode;
     theme: string;
     lighting: string;
-    productImage: Part;
+    productImages: Part[];
     modelImage?: Part;
 }
 
@@ -24,24 +24,34 @@ interface GeneratedImageData {
     mimeType: string;
 }
 
-export async function generateImages({ mode, theme, lighting, productImage, modelImage }: GenerateImagesParams): Promise<GeneratedImageData[]> {
+export async function generateImages({ mode, theme, lighting, productImages, modelImage }: GenerateImagesParams): Promise<GeneratedImageData[]> {
     const parts: Part[] = [];
     let promptText = '';
 
-    if (mode === GenerationMode.Lookbook && modelImage) {
+    if (mode === GenerationMode.Lookbook && modelImage && productImages.length > 0) {
         promptText = `Generate 6 diverse, professional fashion lookbook photos.
         - **Subject**: The person from the first image.
         - **Attire**: The clothing item from the second image.
         - **Setting**: A '${theme}' environment.
         - **Lighting**: '${lighting}' style.
         - **Composition**: Create varied shots like full-body, half-body, and close-ups. Ensure the product is clearly visible. The final images must be photorealistic and high-quality.`;
-        parts.push(modelImage, productImage);
-    } else {
+        parts.push(modelImage, productImages[0]);
+    } else if (mode === GenerationMode.OutfitBuilder && modelImage && productImages.length > 0) {
+        promptText = `Generate 6 diverse, professional fashion lookbook photos.
+        - **Subject**: The person from the first image.
+        - **Attire**: An outfit composed by stylishly combining all the clothing and accessory items from the subsequent images.
+        - **Setting**: A '${theme}' environment.
+        - **Lighting**: '${lighting}' style.
+        - **Composition**: Create varied shots like full-body, half-body, and close-ups. Ensure the full outfit is clearly visible and looks coherent. The final images must be photorealistic and high-quality.`;
+        parts.push(modelImage, ...productImages);
+    } else if (mode === GenerationMode.Broll && productImages.length > 0) {
         promptText = `Generate 6 diverse, professional B-roll product photos for the item in the image.
         - **Setting**: A '${theme}' environment.
         - **Lighting**: '${lighting}' style.
         - **Composition**: Create varied shots including the product in a lifestyle setting, a close-up detail shot, and a hero shot. The images should look like premium advertisements, be photorealistic, and high-quality.`;
-        parts.push(productImage);
+        parts.push(productImages[0]);
+    } else {
+        throw new Error("Invalid parameters for image generation. Check your selections.");
     }
 
     parts.unshift({ text: promptText });
@@ -104,6 +114,25 @@ export async function generateImagePrompt({ src, mimeType }: GeneratePromptParam
 
     return response.text;
 }
+
+export async function generateVideoPrompt({ src, mimeType }: GeneratePromptParams): Promise<string> {
+    const base64Data = src.split(',')[1];
+    const imagePart: Part = {
+        inlineData: {
+            data: base64Data,
+            mimeType: mimeType,
+        },
+    };
+    const prompt = "Describe a short, dynamic video scene based on this image for a text-to-video AI generator. Focus on camera movement (e.g., slow pan, dolly zoom), subject action, and atmospheric details to create a cinematic feel. Be concise and descriptive.";
+    
+    const response = await ai.models.generateContent({
+        model: textModel,
+        contents: { parts: [imagePart, { text: prompt }] },
+    });
+
+    return response.text;
+}
+
 
 export async function generateVideoFromImage({ src, mimeType }: GeneratePromptParams): Promise<string> {
     const base64Data = src.split(',')[1];
